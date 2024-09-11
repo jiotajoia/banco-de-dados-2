@@ -299,3 +299,52 @@ where cod_livro = 2
 --acontecer uma deleção, basta armazenar o "cod_titulo" do livro e a respectiva quantidade em
 --estoque que foi deletada.
 
+DROP TABLE controla_alteracao
+
+CREATE TABLE controla_alteracao (
+	operacao TEXT NOT NULL,
+	data_hora TIMESTAMP DEFAULT NOW() NOT NULL,
+	usuario TEXT DEFAULT CURRENT_USER NOT NULL,
+	cod_titulo_antigo INT,
+	cod_titulo_novo INT,
+	valor_estoque_antigo INT,
+	valor_estoque_novo INT
+);
+
+DROP TRIGGER controlador_alteracoes_livro
+
+CREATE TRIGGER controlador_alteracao_livro
+AFTER INSERT OR UPDATE OR DELETE ON livro
+FOR EACH ROW
+EXECUTE FUNCTION controla_alteracoes_livros();
+
+CREATE OR REPLACE FUNCTION controla_alteracoes_livros()
+RETURNS TRIGGER AS $$
+DECLARE
+
+BEGIN
+
+	IF (TG_OP = 'INSERT') THEN
+		INSERT INTO controla_alteracao(operacao, cod_titulo_novo, valor_estoque_novo)
+		VALUES('I', NEW.cod_titulo, NEW.valor_unitario);
+		RAISE NOTICE 'INSERIDO';
+	ELSIF (TG_OP = 'UPDATE') THEN
+		INSERT INTO controla_alteracao(operacao, cod_titulo_antigo, cod_titulo_novo, valor_estoque_antigo, valor_estoque_novo)
+		VALUES('U', OLD.cod_titulo, NEW.cod_titulo, OLD.valor_unitario, NEW.valor_unitario);
+		RAISE NOTICE 'ATUALIZADO';
+	ELSIF (TG_OP = 'DELETE') THEN
+		INSERT INTO controla_alteracao(operacao, cod_titulo_antigo, valor_estoque_antigo)
+		VALUES('D', OLD.cod_titulo, OLD.valor_unitario);
+		RAISE NOTICE 'DELETADO';
+	END IF;
+
+	RETURN NEW;
+END;
+$$
+LANGUAGE plpgsql;
+
+SELECT * FROM controla_alteracao
+SELECT * FROM livro
+
+DELETE FROM LIVRO
+WHERE cod_titulo = 1

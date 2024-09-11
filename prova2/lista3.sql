@@ -190,3 +190,112 @@ EXECUTE FUNCTION cria_restricoes_item_pedido();
 
 SELECT * FROM FORNECEDOR
 SELECT * FROM ITEM_PEDIDO
+
+--criar um trigger que não permita quantidade negativa de estoque
+-- quando atingir 10 oou menos emitir um aviso (raise notice or raise info)
+
+
+CREATE TRIGGER restricao_negativa
+BEFORE INSERT OR UPDATE ON livro
+FOR EACH ROW
+EXECUTE FUNCTION cria_restricao_negativa();
+
+CREATE OR REPLACE FUNCTION cria_restricao_negativa()
+RETURNS TRIGGER 
+AS $$
+BEGIN
+	IF NEW.quant_estoque < 0 THEN
+		RAISE EXCEPTION 'não pode números negativos :c';
+	END IF;
+
+	IF NEW.quant_estoque <= 10 THEN
+		RAISE NOTICE 'estoque com 10 ou menos livros!!! reabastecer';
+	END IF;
+
+	RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+
+
+SELECT * FROM LIVRO
+
+UPDATE LIVRO
+SET QUANT_ESTOQUE = 10
+WHERE COD_TITULO = 1 
+
+UPDATE LIVRO
+SET QUANT_ESTOQUE = -10
+WHERE COD_TITULO = 1 
+
+--criar um trigger que quando há alguma movimentação (IDU) na tabela item_pedido
+--atualiza quant_itens_pedidos e valor_total_pedido da tabela PEDIDO e a quantidade em
+--estoque da tabela livro
+
+CREATE OR REPLACE TRIGGER triggers_item_pedido
+AFTER INSERT OR DELETE OR UPDATE ON item_pedido
+FOR EACH ROW
+EXECUTE FUNCTION movimentacao_item_pedido();
+
+
+CREATE OR REPLACE FUNCTION movimentacao_item_pedido()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Atualização após a inserção de um item
+    IF (TG_OP = 'INSERT') THEN
+        -- Atualizar o valor total do pedido e a quantidade de itens no pedido
+        UPDATE Pedido
+        SET quant_itens_pedidos = COALESCE(quant_itens_pedidos, 0) + NEW.quantidade_item,
+            valor_total_pedido = COALESCE(valor_total_pedido, 0) + NEW.valor_total_item
+        WHERE cod_pedido = NEW.cod_pedido;
+
+        -- Atualizar a quantidade em estoque do livro
+        UPDATE Livro
+        SET quant_estoque = quant_estoque - NEW.quantidade_item
+        WHERE cod_livro = NEW.cod_livro;
+
+    -- Atualização após a remoção de um item
+    ELSIF (TG_OP = 'DELETE') THEN
+        -- Atualizar o valor total do pedido e a quantidade de itens no pedido
+        UPDATE Pedido
+        SET quant_itens_pedidos = COALESCE(quant_itens_pedidos, 0) - OLD.quantidade_item,
+            valor_total_pedido = COALESCE(valor_total_pedido, 0) - OLD.valor_total_item
+        WHERE cod_pedido = OLD.cod_pedido;
+
+        -- Atualizar a quantidade em estoque do livro
+        UPDATE Livro
+        SET quant_estoque = quant_estoque + OLD.quantidade_item
+        WHERE cod_livro = OLD.cod_livro;
+
+    -- Atualização após uma alteração de um item
+    ELSIF (TG_OP = 'UPDATE') THEN
+        -- Atualizar o valor total do pedido e a quantidade de itens no pedido
+        UPDATE Pedido
+        SET quant_itens_pedidos = COALESCE(quant_itens_pedidos, 0) - OLD.quantidade_item + NEW.quantidade_item,
+            valor_total_pedido = COALESCE(valor_total_pedido, 0) - OLD.valor_total_item + NEW.valor_total_item
+        WHERE cod_pedido = NEW.cod_pedido;
+
+        -- Atualizar a quantidade em estoque do livro
+        UPDATE Livro
+        SET quant_estoque = quant_estoque + OLD.quantidade_item - NEW.quantidade_item
+        WHERE cod_livro = NEW.cod_livro;
+    END IF;
+
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+select * from item_pedido
+select * from pedido
+
+update item_pedido
+set quantidade_item = 4
+where cod_livro = 2
+
+--Crie uma tabela chamada "controla_alteracao". Nesta tabela, deverão ser armazenadas as
+--alterações (update, delete) feitas na tabela "livro". Deverão ser registrados as seguintes
+--informações: operação que foi realizada, a data e hora, além do usuário que realizou a
+--modificação. No caso de acontecer uma atualização, deverão ser registrados os valores novos
+--e os valores antigos da coluna "cod_titulo" do livro e quantidade em estoque. No caso de
+--acontecer uma deleção, basta armazenar o "cod_titulo" do livro e a respectiva quantidade em
+--estoque que foi deletada.
+
